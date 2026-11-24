@@ -1,0 +1,105 @@
+--- a/src/model/diffusion/minimax_h3.hpp
++++ b/src/model/diffusion/minimax_h3.hpp
+@@ -21,7 +21,7 @@
+ 
+ namespace MiniMaxH3 {
+ 
+-    constexpr int H3_GRAPH_SIZE                   = 131072;
++    constexpr int H3_GRAPH_SIZE                   = 524288;
+     constexpr float DEFAULT_ATTN_CHUNK_BUDGET_GIB = 2.f;
+     constexpr float FRAME_RESCALE                 = 5.f / 3.f;
+     constexpr float VISUAL_COND_TIMESTEP          = 0.999f;
+@@ -230,6 +230,7 @@
+     }
+ 
+     struct MLP : public UnaryBlock {
++        int64_t linear_chunk_tokens = 0;
+         int64_t ffn_hidden_size;
+ 
+         MLP(int64_t hidden_size,
+@@ -281,6 +282,7 @@
+                 size_t token_bytes = ggml_row_size(GGML_TYPE_F32, std::max(x->ne[0], 2 * ffn_hidden_size)) * x->ne[2] * x->ne[3];
+                 chunk_size         = static_cast<int64_t>(std::min<size_t>(chunk_size, std::max<size_t>(1, chunk_budget / token_bytes)));
+             }
++            if (linear_chunk_tokens > 0) chunk_size = std::min(chunk_size, linear_chunk_tokens);
+             if (chunk_size == x->ne[1]) {
+                 return forward_chunk(x);
+             }
+@@ -292,6 +294,7 @@
+                     input = ggml_cont(ctx->ggml_ctx, input);
+                 }
+                 chunks.push_back(forward_chunk(input));
++                if (linear_chunk_tokens > 0) ctx->expand_graph(chunks.back());
+             }
+             return ggml_ext_vec_concat(ctx, chunks, 1);
+         }
+@@ -310,6 +313,7 @@
+         int64_t heads;
+         int64_t head_dim;
+         float head_chunk_budget_gib = DEFAULT_ATTN_CHUNK_BUDGET_GIB;
++        int64_t linear_chunk_tokens = 0;
+         bool split_projections;
+ 
+         Attention(int64_t hidden_size,
+@@ -369,6 +373,7 @@
+                 size_t token_bytes = ggml_row_size(GGML_TYPE_F32, 3 * heads * head_dim) * inputs[0]->ne[2] * inputs[0]->ne[3];
+                 chunk_size         = static_cast<int64_t>(std::min<size_t>(chunk_size, std::max<size_t>(1, chunk_budget / token_bytes)));
+             }
++            if (linear_chunk_tokens > 0) chunk_size = std::min(chunk_size, linear_chunk_tokens);
+             if (chunk_size == sequence) {
+                 ggml_tensor* projected = nullptr;
+                 for (size_t i = 0; i < inputs.size(); ++i) {
+@@ -395,6 +400,7 @@
+                     auto qkv = split_qkv(ctx, project_packed_qkv(ctx, part));
+                     for (int j = 0; j < 3; ++j) {
+                         chunks[j].push_back(ggml_cont(ctx->ggml_ctx, qkv[j]));
++                        if (linear_chunk_tokens > 0) ctx->expand_graph(chunks[j].back());
+                     }
+                 }
+             }
+@@ -1248,8 +1254,19 @@
+             : DiffusionModelRunner(backend, prefix, weight_manager),
+               config(Config::detect_from_weights(tensors, prefix)),
+               model(config) {
+-            float head_chunk_budget_gib = DEFAULT_ATTN_CHUNK_BUDGET_GIB;
++            float head_chunk_budget_gib = 0.0625f;
++            int64_t linear_chunk_tokens = 2048;
+             for (const auto& [key, value] : parse_key_value_args(model_args, "model arg")) {
++                if (key == "minimax_h3_linear_chunk_tokens") {
++                    try {
++                        size_t consumed = 0;
++                        const auto parsed = std::stoll(value, &consumed);
++                        if (consumed != value.size() || parsed < 0 || parsed > 65536) throw std::invalid_argument("chunk tokens");
++                        linear_chunk_tokens = parsed;
++                    } catch (const std::exception&) {
++                        throw std::invalid_argument("minimax_h3_linear_chunk_tokens must be 0..65536");
++                    }
++                }
+                 if (key == "minimax_h3_attn_chunk_budget") {
+                     float parsed = 0.f;
+                     if (parse_strict_float(value, parsed) && std::isfinite(parsed) && parsed >= 0.f) {
+@@ -1264,8 +1281,13 @@
+             for (auto block : blocks) {
+                 if (auto attention = dynamic_cast<Attention*>(block)) {
+                     attention->head_chunk_budget_gib = head_chunk_budget_gib;
+-                }
+-            }
++                    attention->linear_chunk_tokens = linear_chunk_tokens;
++                }
++            }
++            for (auto block : blocks) {
++                if (auto mlp = dynamic_cast<MLP*>(block)) mlp->linear_chunk_tokens = linear_chunk_tokens;
++            }
++            LOG_INFO("Struve H3 linear chunk: %lld tokens (0 preserves upstream)", (long long)linear_chunk_tokens);
+             LOG_INFO("MiniMax-H3 attention chunk budget: %.3g GiB (0 disables grouping)", head_chunk_budget_gib);
+             model.init(params_ctx, tensors, prefix);
+         }
+@@ -1434,6 +1456,8 @@
+                 }
+             }
+ 
++            const auto packed_tokens = layout.positions.size() / 3;
++            LOG_INFO("Struve H3 sequence: %lld tokens, %lld heads; ordinary FP32 QK matrix alone %.2f GiB", (long long)packed_tokens, (long long)config.num_attention_heads, double(packed_tokens) * double(packed_tokens) * config.num_attention_heads * 4.0 / (1024.0 * 1024.0 * 1024.0));
+             auto graph      = new_graph_custom(H3_GRAPH_SIZE);
+             auto runner_ctx = get_context(graph);
+             auto output     = model.forward(&runner_ctx,

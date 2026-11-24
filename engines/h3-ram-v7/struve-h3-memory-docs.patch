@@ -1,0 +1,25 @@
+--- a/docs/models/minimax_h3.md
++++ b/docs/models/minimax_h3.md
+@@ -437,6 +437,22 @@
+ presets also work with `--hires-sigmas`; their length determines the step count.
+ They already include video flow shift 12, so keep the default flow shift.
+ 
++## Options: Struve experimental RAM mode
++
++This local Struve build keeps intermediate H3 diffusion results in system RAM and uploads the inputs needed for each GPU stage. It preserves full-sequence attention and the requested native video size. This does not make RAM an automatic extension of VRAM: each GPU stage must still fit. Other model families keep their existing cache behavior.
++
++| Option | Meaning in this local build |
++| --- | --- |
++| `--model-args minimax_h3_linear_chunk_tokens=2048` | Process linear operations in token chunks. Default 2048; valid range 0–65536. Zero disables linear chunking but does not disable the RAM intermediate cache. |
++| `minimax_h3_attn_chunk_budget=0.0625` in `--model-args` | Target one Q/K head group's size in GiB. This local default differs from upstream's 2 GiB; it is not a total VRAM limit. |
++| `--offload-to-cpu` | Keep weights in system RAM and stage them as needed. Intermediate RAM caching is a separate local change. |
++| `--max-vram 6.5` | Example weight-placement budget in GiB. Choose it for the selected GPU and leave room for other applications and working buffers. |
++| `--flash-attn on` | Avoid the full quadratic attention matrix. Use a backend compatible with the GPU; SageAttention is not a substitute on Pascal. |
++
++The text encoder and VAE can be assigned independently using the existing backend controls. GPU stages still perform the diffusion calculation; `--backend diffusion=cpu` instead moves that calculation to CPU and may be much slower. RAM limits should leave headroom for the system and other applications.
++
++The experimental build was made from the pinned C++ source and uses its matching, unchanged CUDA 12 backend DLL. Numerical comparisons and full-workload qualification are recorded separately in the Struve workspace. Small numerical checks do not qualify every resolution, duration, model variant or GPU.
++
+ ## Notes and limitations
+ 
+ - Width and height are aligned upward to a multiple of 32.

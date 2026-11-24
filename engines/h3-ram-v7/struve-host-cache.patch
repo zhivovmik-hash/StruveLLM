@@ -1,0 +1,120 @@
+--- a/src/model/diffusion/minimax_h3.hpp
++++ b/src/model/diffusion/minimax_h3.hpp
+@@ -615,7 +615,8 @@
+                              ggml_tensor* x,
+                              ggml_tensor* t_emb,
+                              const std::vector<TokenModulationSpan>& segments,
+-                             ggml_tensor* pe) {
++                             ggml_tensor* pe,
++                             const std::string& cut_prefix) {
+             auto norm1 = std::dynamic_pointer_cast<RMSNorm>(blocks["norm1"]);
+             auto norm2 = std::dynamic_pointer_cast<RMSNorm>(blocks["norm2"]);
+             auto attn  = std::dynamic_pointer_cast<Attention>(blocks["attn"]);
+@@ -636,7 +637,11 @@
+             auto qkv      = attn->project_qkv(ctx, inputs, [&](ggml_tensor* input, size_t i) {
+                 return modulate(norm1->forward(ctx, input), rows[i], 0, 1);
+             });
++            for (size_t i = 0; i < qkv.size(); ++i) {
++                sd::ggml_graph_cut::mark_graph_cut(qkv[i], cut_prefix + ".qkv" + std::to_string(i), "projected");
++            }
+             auto attended = attn->attend(ctx, qkv, pe);
++            sd::ggml_graph_cut::mark_graph_cut(attended, cut_prefix + ".attention", "attended");
+             std::vector<ggml_tensor*> projections;
+             for (const auto& segment : segments) {
+                 auto part = ggml_ext_slice(ctx, attended, 1, segment.start, segment.end, false);
+@@ -963,7 +968,7 @@
+             auto pe    = build_rope(ctx, position_ids);
+             for (int64_t i = 0; i < config.num_layers; ++i) {
+                 auto block = std::dynamic_pointer_cast<TransformerBlock>(blocks["blocks." + std::to_string(i)]);
+-                h          = block->forward(ctx, h, t_emb, segments, pe);
++                h          = block->forward(ctx, h, t_emb, segments, pe, "minimax_h3.blocks." + std::to_string(i));
+                 sd::ggml_graph_cut::mark_graph_cut(h,
+                                                    "minimax_h3.blocks." + std::to_string(i),
+                                                    "hidden_states");
+--- a/src/core/runner_cache.h
++++ b/src/core/runner_cache.h
+@@ -51,11 +51,15 @@
+ 
+     class GraphCutTensorCache {
+         ggml_backend_t backend_;
++        ggml_backend_t host_backend_ = nullptr;
+         CachedTensors tensors_;
+ 
+     public:
+         explicit GraphCutTensorCache(ggml_backend_t backend)
+             : backend_(backend) {}
++        ~GraphCutTensorCache();
++        bool enable_host_cache();
++        bool uses_host_cache() const { return host_backend_ != nullptr; }
+         ggml_tensor* get(const std::string& name) const;
+         size_t resident_bytes(ggml_backend_dev_t device) const;
+         size_t estimate_output_bytes(ggml_cgraph* graph,
+--- a/src/core/runner_cache.cpp
++++ b/src/core/runner_cache.cpp
+@@ -155,6 +155,22 @@
+         committed_.clear();
+     }
+ 
++    GraphCutTensorCache::~GraphCutTensorCache() {
++        clear();
++        if (host_backend_ != nullptr) ggml_backend_free(host_backend_);
++    }
++
++    bool GraphCutTensorCache::enable_host_cache() {
++        if (host_backend_ != nullptr) return true;
++        auto host = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, nullptr);
++        if (host == nullptr) return false;
++        clear();
++        host_backend_ = host;
++        backend_ = host;
++        LOG_INFO("Struve H3: inter-stage graph tensors cached in host RAM");
++        return true;
++    }
++
+     ggml_tensor* GraphCutTensorCache::get(const std::string& name) const {
+         return cached_tensor(tensors_, name);
+     }
+@@ -186,6 +202,8 @@
+     size_t GraphCutTensorCache::estimate_output_bytes(
+         ggml_cgraph* graph,
+         const ggml_graph_cut::Segment& segment) const {
++        // This method budgets pending device bytes; host allocation is limited by the process RAM budget.
++        if (uses_host_cache()) return 0;
+         ggml_backend_buffer_type_t buffer_type =
+             ggml_backend_get_default_buffer_type(backend_);
+         if (buffer_type == nullptr) {
+--- a/src/core/execution_engine.cpp
++++ b/src/core/execution_engine.cpp
+@@ -521,6 +521,12 @@
+     }
+ 
+     bool GraphExecution::execute_graph(ggml_cgraph* graph, int n_threads, bool no_return, const std::function<bool()>& read_outputs) {
++        // Opt-in runtime: only H3 diffusion gets CPU cut caching; other models retain the upstream behavior.
++        if (task_.description == "minimax_h3" && !sd_backend_is_cpu(session_.backend_) &&
++            !session_.cut_cache_.enable_host_cache()) {
++            LOG_ERROR("Struve H3: cannot initialize host graph cache");
++            return false;
++        }
+         if (!assign_graph_cut_layer_split_backends(graph)) {
+             return false;
+         }
+@@ -626,6 +632,7 @@
+                 for (int output_index : segment.output_node_indices) {
+                     auto tensor = ggml_graph_node(graph, output_index);
+                     if (ggml_graph_cut::is_graph_cut_tensor(tensor) && segment.future_cut_names.count(tensor->name) &&
++                        !session_.cut_cache_.uses_host_cache() &&
+                         GraphCutTensorCache::can_bind_output(session_.backend_, tensor)) {
+                         cache_outputs.insert(tensor);
+                     }
+@@ -635,6 +642,11 @@
+             if (!session_.workspace_.prepare(measurement)) {
+                 last_compute_status_ = GGML_STATUS_ALLOC_FAILED;
+                 return fail_segment("workspace preparation");
++            }
++            if (task_.description == "minimax_h3") {
++                for (const auto& buffer : measurement.buffers) {
++                    LOG_VERBOSE("Struve H3 segment %zu/%zu (%s) workspace %.2f MiB on %s", index + 1, plan.segments.size(), segment.group_name.c_str(), buffer.bytes / (1024.0 * 1024.0), ggml_backend_name(buffer.backend));
++                }
+             }
+             const size_t cut_bytes = last ? 0 : session_.cut_cache_.estimate_output_bytes(graph, segment);
+             size_t new_cache_bytes = add_bytes(cut_bytes, session_.cache_.pending_bytes(segment_graph));

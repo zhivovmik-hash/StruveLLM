@@ -1,0 +1,25 @@
+name: Windows build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - name: Install Rust
+        run: rustup default 1.95.0-x86_64-pc-windows-msvc
+      - run: npm ci
+      - run: npm run build
+      - run: cargo test --locked --lib
+      - run: cargo build --locked --release --features desktop --bins
+      - name: Test Node bridges and CLI integration
+        shell: pwsh
+        run: |
+          $cases = Get-ChildItem tests -Filter '*.test.mjs' | ForEach-Object FullName
+          node --test --test-concurrency=2 @cases

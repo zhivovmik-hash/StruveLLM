@@ -1,0 +1,32 @@
+node_modules/
+dist/
+target/
+gen/
+*.log
+__pycache__/
+*.pyc
+
+# Local installation and user workspace
+/data/
+/jobs/
+/logs/
+/models/
+/attachments/
+/outputs/
+/cache/
+/downloads/
+/backups/
+/runtimes/
+/build/
+.env
+.env.local
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Locally staged installer inputs and outputs
+/payload/
+/out/
+/tools/
+/release/
+tests/*-result.json

@@ -1,0 +1,34 @@
+--- a/src/model/diffusion/minimax_h3.hpp
++++ b/src/model/diffusion/minimax_h3.hpp
+@@ -426,16 +426,26 @@
+                                            : heads;
+             if (head_chunk < heads) {
+                 std::vector<ggml_tensor*> outputs;
++                // GGML SET uses signed 32-bit strides. Keep the upstream concat fallback above that limit.
++                const uint64_t output_bytes = uint64_t(heads) * head_dim * qkv[0]->ne[2] * qkv[0]->ne[3] * sizeof(float);
++                auto assembled = output_bytes < 2147483647ULL
++                    ? ggml_ext_zeros(ctx, heads * head_dim, qkv[0]->ne[2], qkv[0]->ne[3], 1) : nullptr;
+                 for (int64_t start = 0; start < heads; start += head_chunk) {
+                     std::vector<ggml_tensor*> part;
+                     for (auto tensor : qkv) {
+                         part.push_back(ggml_ext_slice(ctx, tensor, 1, start, std::min(start + head_chunk, heads), false));
+                     }
+-                    outputs.push_back(attend_heads(ctx, part, pe));
+-                    // Keep each head group's temporaries out of the concatenation tree's live set.
+-                    ctx->expand_graph(outputs.back());
+-                }
+-                return ggml_ext_vec_concat(ctx, outputs, 0);
++                    auto attended = attend_heads(ctx, part, pe);
++                    if (assembled != nullptr) {
++                        assembled = ggml_set_inplace(ctx->ggml_ctx, assembled, attended,
++                            assembled->nb[1], assembled->nb[2], assembled->nb[3], start * head_dim * assembled->nb[0]);
++                        ctx->expand_graph(assembled);
++                    } else {
++                        outputs.push_back(attended);
++                        ctx->expand_graph(attended);
++                    }
++                }
++                return assembled != nullptr ? assembled : ggml_ext_vec_concat(ctx, outputs, 0);
+             }
+             return attend_heads(ctx, qkv, pe);
+         }

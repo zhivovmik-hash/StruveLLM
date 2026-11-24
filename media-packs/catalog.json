@@ -1,0 +1,317 @@
+[
+  {
+    "id": "h3-prompt-lint",
+    "name": "H3 Prompt Lint",
+    "families": [
+      "minimax-h3"
+    ],
+    "backend": "bundled",
+    "ru": "Проверяет структуру промпта H3, тайминг и описание сцены до рендера. Замечания появляются рядом с готовым роликом.",
+    "en": "Checks H3 prompt structure, shot timing and scene fields before rendering. Warnings appear with the clip.",
+    "requires_ru": "Локальный Python из профиля видеомодели. Ядро MiniMax-H3 Tools, MIT, версия 6fd5025. Пиксели не меняет.",
+    "requires_en": "Local Python from the video model profile. MiniMax-H3 Tools core, MIT, revision 6fd5025. Leaves pixels untouched.",
+    "source": "https://github.com/Rinne414/ComfyUI-MiniMaxH3-Tools/blob/6fd50255dc08c5bfba7b91fee083c8c0abf2023b/prompt_lint.py"
+  },
+  {
+    "id": "lora",
+    "name": "LoRA",
+    "families": [
+      "sd15",
+      "sdxl",
+      "sd35",
+      "flux1",
+      "flux2-klein",
+      "minimax-h3"
+    ],
+    "backend": "local",
+    "ru": "Подмешивает адаптер к весам при генерации. Можно задать стиль, персонажа или предмет и силу эффекта.",
+    "en": "Applies an adapter during sampling for a style, character or object at a selected strength.",
+    "requires_ru": "Нужен локальный .safetensors под точную базовую модель и поддерживаемые движком ключи. Привязывается к выбранной модели.",
+    "requires_en": "Requires a local .safetensors file with keys supported by the runtime for the exact base model. Bound to the selected model.",
+    "source": "https://github.com/leejet/stable-diffusion.cpp"
+  },
+  {
+    "id": "longtake",
+    "name": "H3 LongTake",
+    "families": [
+      "minimax-h3"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Строит длинный ролик из коротких сцен с передачей движения и привязкой к опорному кадру.",
+    "en": "Builds a longer clip from shorter segments with motion continuity and keyframes.",
+    "requires_ru": "Нужны ComfyUI и подходящий граф FL2VA или Ref2VA. Для проверки света выключите seam_match: это цветокоррекция стыка.",
+    "requires_en": "Requires ComfyUI and a matching FL2VA or Ref2VA graph. Disable seam_match when evaluating raw exposure.",
+    "source": "https://github.com/mark9009/ComfyUI-H3-LongTake",
+    "registry": {
+      "id": "comfyui-h3-longtake",
+      "version": "1.4.0",
+      "node": "H3LongTakeRender"
+    }
+  },
+  {
+    "id": "viggle",
+    "name": "Viggle-Animate H3",
+    "families": [
+      "minimax-h3"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Переносит исполнение из видео-образца на персонажа с фотографии. Подходит для передачи предмета, если есть видео самого действия.",
+    "en": "Transfers a driving performance to a character from a photo. Useful when a recording of the handoff is available.",
+    "requires_ru": "Отдельный чекпойнт Viggle и видео движения. Совместимость с 8 ГиБ требует проверки.",
+    "requires_en": "Requires the separate Viggle checkpoint and a driving video. Operation on 8 GiB requires qualification.",
+    "source": "https://github.com/Saganaki22/ComfyUI-Viggle-Animate-H3",
+    "registry": {
+      "id": "comfyui-viggle-animate-h3",
+      "version": "1.3.2",
+      "node": "ViggleAnimateConditioning"
+    }
+  },
+  {
+    "id": "rewriter",
+    "name": "MiniMax-H3 Prompt Rewriter",
+    "families": [
+      "minimax-h3",
+      "h3-image"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Готовит структурированное описание сцен, референсов и звука для H3.",
+    "en": "Builds structured descriptions of shots, references and sound for H3.",
+    "requires_ru": "Нужны граф и писатель промптов. Варианты с локальной моделью и с внешним API имеют разный маршрут данных.",
+    "requires_en": "Requires a graph and a writer. Local and API variants have different data paths.",
+    "source": "https://github.com/pytraveler/MiniMax-H3-Prompt-Rewriter-ComfyUI/blob/main/README_RU.md"
+  },
+  {
+    "id": "h3-tools",
+    "name": "MiniMax-H3 Tools",
+    "families": [
+      "minimax-h3",
+      "h3-image"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Планирует размер и длительность, проверяет промпты и работает с аудио- и видеолатентами. Для H3 Image есть отдельные примеры.",
+    "en": "Plans canvas and duration, checks prompts and handles audio/video latents. Includes separate H3 Image examples.",
+    "requires_ru": "У инструментов планирования и загрузчиков NF4 разные требования. Для проверки промпта здесь доступен отдельный локальный пакет.",
+    "requires_en": "Planning tools and NF4 loaders have different requirements. A standalone local prompt checker is available here.",
+    "source": "https://github.com/Rinne414/ComfyUI-MiniMaxH3-Tools",
+    "registry": {
+      "id": "minimax-h3-tools",
+      "version": "0.2.1",
+      "node": "MiniMaxH3XPromptLint"
+    }
+  },
+  {
+    "id": "controlnet-aux",
+    "name": "ControlNet Auxiliary Preprocessors",
+    "families": [
+      "sd15",
+      "sdxl",
+      "sd35",
+      "flux1"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Извлекает позу, глубину или контур из референса. Карту можно передать совместимой модели управления.",
+    "en": "Extracts pose, depth or edges from a reference for a compatible control model.",
+    "requires_ru": "Препроцессор готовит карту. Отдельно нужны совместимые веса ControlNet и граф генерации.",
+    "requires_en": "Preprocessing produces a map. A matching ControlNet and generation graph are required separately.",
+    "source": "https://github.com/Fannovel16/comfyui_controlnet_aux",
+    "registry": {
+      "id": "comfyui_controlnet_aux",
+      "version": "1.1.6",
+      "node": "CannyEdgePreprocessor"
+    }
+  },
+  {
+    "id": "x-flux",
+    "name": "XLabs ControlNet / IP-Adapter",
+    "families": [
+      "flux1"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Удерживает композицию или признаки референса при создании кадра FLUX.1.",
+    "en": "Guides composition or reference features of a FLUX.1 frame.",
+    "requires_ru": "Веса XLabs для конкретной версии FLUX.1. У FLUX.2 Klein отдельная совместимость.",
+    "requires_en": "XLabs weights for the specified FLUX.1 variant. FLUX.2 Klein has separate compatibility.",
+    "source": "https://github.com/XLabs-AI/x-flux-comfyui"
+  },
+  {
+    "id": "flux-tools",
+    "name": "FLUX.1 Fill / Depth / Canny / Redux",
+    "families": [
+      "flux1"
+    ],
+    "backend": "weights",
+    "ru": "Заменяет область по маске, сохраняет геометрию или делает вариации исходного изображения в зависимости от выбранной модели.",
+    "en": "Edits a mask, preserves geometry or varies a reference depending on the selected model.",
+    "requires_ru": "Каждой задаче соответствует своя модель или адаптер и схема входов. Fill и Redux подключаются по-разному.",
+    "requires_en": "Each task has its own model or adapter and input contract. Fill and Redux require different loaders.",
+    "source": "https://bfl.ai/blog/24-11-21-tools"
+  },
+  {
+    "id": "impact",
+    "name": "ComfyUI Impact Pack",
+    "families": [
+      "sd15",
+      "sdxl"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Находит область лица или руки и перерисовывает её в отдельном проходе. Полезен для подготовки референсов.",
+    "en": "Detects a face or hand region and re-renders it in a separate pass when preparing references.",
+    "requires_ru": "Нужны детектор и совместимая модель инпейнтинга. Для видео отдельно проверяют мерцание между кадрами.",
+    "requires_en": "Requires a detector and compatible inpainting model. Temporal flicker must be checked separately for video.",
+    "source": "https://github.com/ltdrdata/ComfyUI-Impact-Pack",
+    "registry": {
+      "id": "comfyui-impact-pack",
+      "version": "9.1.1",
+      "node": "FaceDetailer"
+    }
+  },
+  {
+    "id": "nunchaku",
+    "name": "Nunchaku",
+    "families": [
+      "flux1",
+      "sdxl"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Ускоряет запуск поддерживаемых квантованных моделей на совместимой архитектуре GPU.",
+    "en": "Accelerates supported quantized models on compatible GPU architectures.",
+    "requires_ru": "В опубликованном перечне архитектур Pascal SM 6.1 отсутствует. GTX 1080 и P40 для этого пакета не подходят.",
+    "requires_en": "Pascal SM 6.1 is absent from the published architecture list. This excludes the GTX 1080 and P40.",
+    "source": "https://nunchaku.tech/docs/nunchaku/installation/installation.html"
+  },
+  {
+    "id": "adetailer",
+    "name": "ADetailer",
+    "families": [
+      "sd15",
+      "sdxl"
+    ],
+    "backend": "WebUI / Forge",
+    "ru": "Находит лица или руки на изображении и дорабатывает выбранную область.",
+    "en": "Detects and refines faces or hands within a still image.",
+    "requires_ru": "Для Automatic1111 или совместимой сборки Forge. Для референса нужен детектор соответствующего объекта.",
+    "requires_en": "Requires Automatic1111 or a compatible Forge build, plus a detector for the chosen object.",
+    "source": "https://github.com/Bing-su/adetailer"
+  },
+  {
+    "id": "gguf",
+    "name": "ComfyUI-GGUF",
+    "families": [
+      "flux1",
+      "sd35"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Загружает квантованные веса GGUF в граф. Помогает разместить FLUX на карте с ограниченной видеопамятью.",
+    "en": "Loads quantized GGUF weights in a graph. Useful for fitting FLUX on a smaller GPU.",
+    "requires_ru": "Нужны совместимые GGUF-веса, энкодеры и VAE. Расход памяти зависит от графа и разрешения.",
+    "requires_en": "Requires matching GGUF weights, encoders and a VAE. Memory use depends on the graph and resolution.",
+    "source": "https://github.com/city96/ComfyUI-GGUF",
+    "registry": {
+      "id": "ComfyUI-GGUF",
+      "version": "1.1.10",
+      "node": "UnetLoaderGGUF"
+    }
+  },
+  {
+    "id": "rgthree",
+    "name": "rgthree · Power LoRA Loader",
+    "families": [
+      "sd15",
+      "sdxl",
+      "sd35",
+      "flux1"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Подключает несколько LoRA в графе. У каждого адаптера свои сила и переключатель.",
+    "en": "Stacks several LoRAs in a graph with an independent strength and switch for each adapter.",
+    "requires_ru": "Все адаптеры должны подходить к базовой модели и загрузчику.",
+    "requires_en": "Use adapters matched to the base model and loader.",
+    "source": "https://github.com/rgthree/rgthree-comfy",
+    "registry": {
+      "id": "rgthree-comfy",
+      "version": "1.0.2610300006",
+      "node": "Power Lora Loader (rgthree)"
+    }
+  },
+  {
+    "id": "kjnodes",
+    "name": "KJNodes",
+    "families": [
+      "sd15",
+      "sdxl",
+      "sd35",
+      "flux1",
+      "minimax-h3"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Показывает размер и количество кадров и помогает подготовить пакеты изображений для графа.",
+    "en": "Inspects image dimensions and frame counts and prepares batches of images for a graph.",
+    "requires_ru": "Набор утилит. Отдельным узлам могут требоваться дополнительные библиотеки.",
+    "requires_en": "A utility collection. Some nodes require additional libraries.",
+    "source": "https://github.com/kijai/ComfyUI-KJNodes",
+    "registry": {
+      "id": "comfyui-kjnodes",
+      "version": "1.5.5",
+      "node": "GetImageSizeAndCount"
+    }
+  },
+  {
+    "id": "ultimate-upscale",
+    "name": "Ultimate SD Upscale",
+    "families": [
+      "sd15",
+      "sdxl"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Увеличивает изображение по участкам. Размер плитки позволяет подобрать расход видеопамяти.",
+    "en": "Enlarges an image one tile at a time. Tile size controls memory demand.",
+    "requires_ru": "Нужны апскейлер и совместимая модель для перерисовки плиток.",
+    "requires_en": "Requires an upscaler and a compatible model for tile refinement.",
+    "source": "https://github.com/ssitu/ComfyUI_UltimateSDUpscale",
+    "registry": {
+      "id": "comfyui_ultimatesdupscale",
+      "version": "1.7.2",
+      "node": "UltimateSDUpscale"
+    }
+  },
+  {
+    "id": "ipadapter",
+    "name": "IPAdapter Plus",
+    "families": [
+      "sd15",
+      "sdxl"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Переносит композицию, стиль или детали внешности с изображения-референса.",
+    "en": "Uses a reference image to guide composition, visual style or appearance.",
+    "requires_ru": "Нужны совместимые IP-Adapter, CLIP Vision и базовая модель SD 1.5 или SDXL.",
+    "requires_en": "Requires matching IP-Adapter, CLIP Vision and SD 1.5 or SDXL weights.",
+    "source": "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
+    "registry": {
+      "id": "comfyui_ipadapter_plus",
+      "version": "2.0.0",
+      "node": "IPAdapterAdvanced"
+    }
+  },
+  {
+    "id": "detail-daemon",
+    "name": "Detail Daemon",
+    "families": [
+      "sd15",
+      "sdxl",
+      "sd35",
+      "flux1"
+    ],
+    "backend": "ComfyUI",
+    "ru": "Меняет детализацию текстур на выбранной части шагов семплирования.",
+    "en": "Changes texture detail during a selected range of sampling steps.",
+    "requires_ru": "Нужен совместимый семплер. Силу эффекта подбирают на одинаковом seed.",
+    "requires_en": "Requires a supported sampler. Compare strength settings with the same seed.",
+    "source": "https://github.com/Jonseed/ComfyUI-Detail-Daemon",
+    "registry": {
+      "id": "comfyui-detail-daemon",
+      "version": "1.2.0",
+      "node": "DetailDaemonSamplerNode"
+    }
+  }
+]

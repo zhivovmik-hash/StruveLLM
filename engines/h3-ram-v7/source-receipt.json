@@ -1,0 +1,16 @@
+[
+  {
+    "repo": "leejet/stable-diffusion.cpp",
+    "revision": "532d2c15c430a785a712b2d94281f04e733008a4",
+    "url": "https://codeload.github.com/leejet/stable-diffusion.cpp/tar.gz/532d2c15c430a785a712b2d94281f04e733008a4",
+    "archive_sha256": "0278dc8e6e180adc4b43b3ace515eeef870dd76533a34fa1edcfa071ce7d7812",
+    "bytes": 129251967
+  },
+  {
+    "repo": "leejet/ggml",
+    "revision": "eeda9ec48fc84a3df0bb9dcc19ae9053075a2539",
+    "url": "https://codeload.github.com/leejet/ggml/tar.gz/eeda9ec48fc84a3df0bb9dcc19ae9053075a2539",
+    "archive_sha256": "8bd7adc7eb1366d31670467951d21eb1a5f55e8f6d89b9b91909ffb0246ac5d2",
+    "bytes": 4724469
+  }
+]

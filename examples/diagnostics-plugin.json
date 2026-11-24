@@ -1,0 +1,15 @@
+{
+  "format": "struve-plugin-v1",
+  "id": "diagnostics-example",
+  "name": "Пример плагина диагностики",
+  "version": "1.0.0",
+  "instructions": "Используйте runtime_info для чтения характеристик среды. Этот пакет не запускает обучение и не изменяет пользовательские файлы.",
+  "mcp_servers": [{
+    "id":"plugin-diagnostics",
+    "name":"Диагностика из плагина",
+    "transport":"stdio",
+    "command":"@struve/node",
+    "args":["@struve/diagnostics"],
+    "env_names":[],"project_ids":["struve"],"allowed_tools":["runtime_info"],"enabled":false
+  }]
+}

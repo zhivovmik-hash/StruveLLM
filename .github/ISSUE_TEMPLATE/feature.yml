@@ -1,0 +1,21 @@
+name: Идея / Feature request
+description: Предложите улучшение Struve LLM. / Suggest an improvement to Struve LLM.
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Какую задачу вы решаете? / What are you trying to do?
+      description: Опишите ситуацию на примере. / A concrete example helps.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Как это должно работать? / How would you like it to work?
+    validations:
+      required: true
+  - type: textarea
+    id: contribution
+    attributes:
+      label: Чем можете помочь? / Would you like to help?
+      description: По желанию — тестирование, примеры, перевод или код. / Optional — testing, examples, translation or code.

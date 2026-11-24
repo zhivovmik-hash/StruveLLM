@@ -1,0 +1,10 @@
+import React,{useState} from 'react';
+type Sheet={name:string,state:string,rows:number,columns:number,truncated:boolean,data:{row:number,cells:any[]}[]};
+function columnName(n:number){let name='';for(n++;n>0;n=Math.floor((n-1)/26))name=String.fromCharCode(65+(n-1)%26)+name;return name}
+function cellText(value:any):string{if(value==null)return '';if(typeof value!=='object')return String(value);if(value.formula||value.sharedFormula)return value.result==null?'—':cellText(value.result);if(value.richText)return value.richText.map((v:any)=>v.text).join('');return value.text||value.error||JSON.stringify(value)}
+export default function Spreadsheet({sheets,lang,truncated}:{sheets:Sheet[],lang:string,truncated?:boolean}){
+ const [index,setIndex]=useState(0),sheet=sheets[index]||sheets[0],L=(ru:string,en:string)=>lang==='en'?en:ru;
+ if(!sheet)return <div className="preview-note">{L('Книга не содержит листов','No worksheets')}</div>;
+ const columns=Math.min(sheet.columns,64);
+ return <div className="sheet-preview"><div className="sheet-tabs" role="tablist" aria-label={L('Листы книги','Worksheets')}>{sheets.map((s,i)=><button key={i} role="tab" aria-selected={index===i} className={index===i?'active':''} onClick={()=>setIndex(i)}>{s.name}{s.state!=='visible'&&<small>{L('скрыт','hidden')}</small>}</button>)}</div><div className="preview-note">{sheet.rows} × {sheet.columns} · {L('Только чтение. Формулы: сохранённые значения, без пересчёта.','Read only. Formulas show cached values without recalculation.')}{(sheet.truncated||truncated)&&<strong> {L('Предпросмотр ограничен: 200 строк, 64 столбца, 50 листов.','Preview limited to 200 rows, 64 columns and 50 sheets.')}</strong>}</div><div className="sheet-grid"><table><thead><tr><th></th>{Array.from({length:columns},(_,i)=><th key={i}>{columnName(i)}</th>)}</tr></thead><tbody>{sheet.data.map(row=><tr key={row.row}><th>{row.row}</th>{Array.from({length:columns},(_,i)=>{const value=row.cells[i];return <td key={i} title={value?.formula?'='+value.formula:cellText(value)} className={value?.formula?'formula':''}>{cellText(value)}</td>})}</tr>)}</tbody></table></div></div>
+}

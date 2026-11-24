@@ -1,0 +1,132 @@
+--- a/src/core/runner_cache.h
++++ b/src/core/runner_cache.h
+@@ -53,6 +53,7 @@
+         ggml_backend_t backend_;
+         ggml_backend_t host_backend_ = nullptr;
+         CachedTensors tensors_;
++        CachedTensors staged_inputs_;
+ 
+     public:
+         explicit GraphCutTensorCache(ggml_backend_t backend)
+@@ -60,6 +61,9 @@
+         ~GraphCutTensorCache();
+         bool enable_host_cache();
+         bool uses_host_cache() const { return host_backend_ != nullptr; }
++        size_t stage_input_bytes(ggml_backend_t backend, const ggml_graph_cut::Segment& segment) const;
++        ggml_status stage_inputs(ggml_backend_t backend, const ggml_graph_cut::Segment& segment);
++        void clear_staged_inputs() { staged_inputs_.clear(); }
+         ggml_tensor* get(const std::string& name) const;
+         size_t resident_bytes(ggml_backend_dev_t device) const;
+         size_t estimate_output_bytes(ggml_cgraph* graph,
+@@ -68,7 +72,7 @@
+         bool bind_outputs(const std::unordered_set<const ggml_tensor*>& outputs);
+         ggml_status capture(ggml_cgraph* graph, const ggml_graph_cut::Segment& segment, const char* log_desc);
+         void prune(const std::unordered_set<std::string>& keep_names);
+-        void clear() { tensors_.clear(); }
++        void clear() { staged_inputs_.clear(); tensors_.clear(); }
+     };
+ }
+ 
+--- a/src/core/runner_cache.cpp
++++ b/src/core/runner_cache.cpp
+@@ -172,11 +172,42 @@
+     }
+ 
+     ggml_tensor* GraphCutTensorCache::get(const std::string& name) const {
+-        return cached_tensor(tensors_, name);
++        auto staged = cached_tensor(staged_inputs_, name);
++        return staged != nullptr ? staged : cached_tensor(tensors_, name);
+     }
+ 
+     size_t GraphCutTensorCache::resident_bytes(ggml_backend_dev_t device) const {
+-        return sd::resident_bytes(tensors_, device);
++        return sd::resident_bytes(tensors_, device) + sd::resident_bytes(staged_inputs_, device);
++    }
++
++    size_t GraphCutTensorCache::stage_input_bytes(ggml_backend_t backend, const ggml_graph_cut::Segment& segment) const {
++        if (!uses_host_cache()) return 0;
++        auto buft = ggml_backend_get_default_buffer_type(backend);
++        size_t bytes = 0;
++        std::unordered_set<std::string> seen;
++        for (const auto& input : segment.input_refs) {
++            if (input.type != ggml_graph_cut::Segment::INPUT_PREVIOUS_CUT || !seen.insert(input.display_name).second) continue;
++            auto tensor = cached_tensor(tensors_, input.display_name);
++            GGML_ASSERT(tensor != nullptr);
++            bytes += GGML_PAD(ggml_backend_buft_get_alloc_size(buft, tensor), ggml_backend_buft_get_alignment(buft));
++        }
++        return bytes;
++    }
++
++    ggml_status GraphCutTensorCache::stage_inputs(ggml_backend_t backend, const ggml_graph_cut::Segment& segment) {
++        clear_staged_inputs();
++        if (!uses_host_cache()) return GGML_STATUS_SUCCESS;
++        for (const auto& input : segment.input_refs) {
++            if (input.type != ggml_graph_cut::Segment::INPUT_PREVIOUS_CUT || staged_inputs_.count(input.display_name)) continue;
++            auto source = cached_tensor(tensors_, input.display_name);
++            if (source == nullptr) return GGML_STATUS_FAILED;
++            ggml_status status;
++            auto entry = CachedTensor::copy(backend, input.display_name, source, status);
++            if (entry == nullptr) return status;
++            staged_inputs_[input.display_name] = std::move(entry);
++        }
++        ggml_backend_synchronize(backend);
++        return GGML_STATUS_SUCCESS;
+     }
+ 
+     bool GraphCutTensorCache::can_bind_output(ggml_backend_t backend, const ggml_tensor* tensor) {
+--- a/src/core/execution_engine.cpp
++++ b/src/core/execution_engine.cpp
+@@ -390,6 +390,12 @@
+             if (external_outputs != nullptr && external_outputs->count(tensor)) {
+                 return session_.backend_;
+             }
++            // CPU cut inputs will be uploaded once, before execution. Measure that actual placement
++            // so the scheduler does not reserve one full strided copy for every attention head group.
++            if (session_.cut_cache_.uses_host_cache() && tensor->op == GGML_OP_NONE &&
++                ggml_graph_cut::is_graph_cut_tensor(const_cast<ggml_tensor*>(tensor))) {
++                return session_.backend_;
++            }
+             if (!params_tensor_set_.count(tensor)) {
+                 return nullptr;
+             }
+@@ -621,6 +627,7 @@
+                         runner.last_compute_status_ = GGML_STATUS_FAILED;
+                     }
+                     bindings.restore();
++                    runner.session_.cut_cache_.clear_staged_inputs();
+                     weights.segment_end();
+                     ggml_free(context);
+                     runner.sync_runtime_residency();
+@@ -649,7 +656,9 @@
+                 }
+             }
+             const size_t cut_bytes = last ? 0 : session_.cut_cache_.estimate_output_bytes(graph, segment);
+-            size_t new_cache_bytes = add_bytes(cut_bytes, session_.cache_.pending_bytes(segment_graph));
++            size_t staging_bytes = session_.cut_cache_.stage_input_bytes(session_.backend_, segment);
++            if (staging_bytes > 0) LOG_VERBOSE("Struve H3 stage input upload: %.2f MiB once", staging_bytes / (1024.0 * 1024.0));
++            size_t new_cache_bytes = add_bytes(staging_bytes, add_bytes(cut_bytes, session_.cache_.pending_bytes(segment_graph)));
+             auto ensure_capacity   = [&]() {
+                 sync_runtime_residency();
+                 auto requests = memory_requests(measurement.buffers, new_cache_bytes);
+@@ -676,6 +685,21 @@
+             }
+             if (!ensure_capacity()) {
+                 return fail_segment("workspace capacity check");
++            }
++            if (staging_bytes > 0) {
++                if (session_.cut_cache_.stage_inputs(session_.backend_, segment) != GGML_STATUS_SUCCESS ||
++                    !bindings.bind_cached_inputs(segment, task_.description.c_str())) {
++                    last_compute_status_ = GGML_STATUS_ALLOC_FAILED;
++                    return fail_segment("host input staging");
++                }
++                // Rebuild the leaf inventory because view roots now refer to the staged CUDA tensors.
++                if (segmented) {
++                    ggml_free(segment_context);
++                    segment_graph = ggml_graph_cut::build_segment_graph(graph, segment, &segment_context);
++                    segment_cleanup.context = segment_context;
++                }
++                staging_bytes = 0;
++                sync_runtime_residency();
+             }
+             if (!session_.cut_cache_.bind_outputs(cache_outputs)) {
+                 last_compute_status_ = GGML_STATUS_ALLOC_FAILED;

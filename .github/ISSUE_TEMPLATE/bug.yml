@@ -1,0 +1,27 @@
+name: Ошибка / Bug report
+description: Опишите воспроизводимую проблему с установкой, чатом, ресурсами или инструментом.
+body:
+  - type: input
+    id: build
+    attributes:
+      label: Версия установщика и Windows / Package tag and Windows version
+      placeholder: 0.8.2-alpha.1, Windows 11 x64
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: CPU, GPU, RAM, модель и движок / Hardware, model and engine
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Что сделали и что ожидали / Steps and expected result
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Что произошло / Actual result
+      description: Приложите текст ошибки или снимок окна, проверив его на личные данные. / Remove private data before attaching logs or screenshots.
+    validations:
+      required: true

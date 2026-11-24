@@ -1,0 +1,36 @@
+--- a/src/model/diffusion/minimax_h3.hpp
++++ b/src/model/diffusion/minimax_h3.hpp
+@@ -652,6 +652,33 @@
+             }
+             auto attended = attn->attend(ctx, qkv, pe);
+             sd::ggml_graph_cut::mark_graph_cut(attended, cut_prefix + ".attention", "attended");
++            // The output projection, residual gate, token-wise RMSNorm and MLP do
++            // not mix sequence positions. Complete each tile before materializing
++            // the next one. Preserve each modality's own modulation row.
++            const auto tile_tokens = mlp->linear_chunk_tokens;
++            if (tile_tokens > 0 && x->ne[1] > tile_tokens &&
++                x->type == GGML_TYPE_F32 && ggml_nbytes(x) < INT32_MAX) {
++                auto output = ggml_ext_zeros_like(ctx, x);
++                for (size_t i = 0; i < segments.size(); ++i) {
++                    const auto& span = segments[i];
++                    for (int64_t start = span.start; start < span.end; start += tile_tokens) {
++                        const auto end = std::min(start + tile_tokens, span.end);
++                        auto hidden = ggml_ext_slice(ctx, x, 1, start, end, false);
++                        auto part = ggml_ext_slice(ctx, attended, 1, start, end, false);
++                        auto projected = attn->project_output(ctx, part);
++                        auto residual = ggml_add(ctx->ggml_ctx, hidden,
++                                                 ggml_mul(ctx->ggml_ctx, projected, rows[i][2]));
++                        auto h = modulate(norm2->forward(ctx, residual), rows[i], 3, 4);
++                        h = ggml_add(ctx->ggml_ctx, residual,
++                                     ggml_mul(ctx->ggml_ctx, mlp->forward(ctx, h), rows[i][5]));
++                        output = ggml_set_inplace(ctx->ggml_ctx, output, h,
++                                                  output->nb[1], output->nb[2], output->nb[3],
++                                                  start * output->nb[1]);
++                        ctx->expand_graph(output);
++                    }
++                }
++                return output;
++            }
+             std::vector<ggml_tensor*> projections;
+             for (const auto& segment : segments) {
+                 auto part = ggml_ext_slice(ctx, attended, 1, segment.start, segment.end, false);

@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {Client} from '@modelcontextprotocol/sdk/client/index.js';
+import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
+import {readDocument,projectPath} from '../bridge/documents.mjs';
+import {previewDocx} from '../bridge/document-preview.mjs';
+import {prepareMessages,videoFrames} from '../bridge/attachments.mjs';
+import {spawnSync} from 'node:child_process';
+const base=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'struve-docs-'));
+test('Bundled document MCP creates, reads and edits DOCX/PDF/XLSX with Cyrillic',async()=>{
+ const client=new Client({name:'document-test',version:'1'}),transport=new StdioClientTransport({command:process.execPath,args:[path.join(base,'bridge/documents.mjs')],env:{STRUVE_PROJECT_ROOT:directory},stderr:'pipe'});transport.stderr?.resume();
+ await client.connect(transport);
+ const call=async(name,args)=>{const r=await client.callTool({name,arguments:args});assert(!r.isError,JSON.stringify(r));return JSON.parse(r.content[0].text)};
+ try{
+  assert.equal((await client.listTools()).tools.length,5);
+  await call('docx_create',{path:'Проверка.docx',title:'Русский документ',paragraphs:[{text:'Первая глава',heading:1},{text:'Текст документа и Unicode: α β γ'}],table:[['GPU','RAM'],['1080','160 GiB']]});
+  const doc=await call('document_read',{path:'Проверка.docx'});assert.match(doc.text,/Русский документ/);assert.match(doc.text,/160 GiB/);
+  const preview=await previewDocx(path.join(directory,'Проверка.docx'));assert.match(preview.html,/<h1>Русский документ<\/h1>/);assert.match(preview.html,/<h1>Первая глава<\/h1>/);assert.match(preview.html,/<table>/);assert.match(preview.html,/160 GiB/);assert(!preview.warnings.some(w=>w.includes('Title')),preview.warnings);
+  await call('xlsx_create',{path:'Таблица.xlsx',sheets:[{name:'Ресурсы',header:true,rows:[['Ресурс','Значение'],['RAM',160],['GPU',8]]}]});
+  const table=await call('document_read',{path:'Таблица.xlsx'});assert.equal(table.sheets[0].data[1].cells[1],160);
+  await call('xlsx_edit_copy',{source:'Таблица.xlsx',output:'Таблица-копия.xlsx',changes:[{sheet:'Ресурсы',cell:'B2',value:192}]});
+  assert.equal((await call('document_read',{path:'Таблица.xlsx'})).sheets[0].data[1].cells[1],160);
+  assert.equal((await call('document_read',{path:'Таблица-копия.xlsx'})).sheets[0].data[1].cells[1],192);
+  const row=await call('document_read',{path:'Таблица.xlsx',sheet:'Ресурсы',start_row:3,max_rows:1});assert.equal(row.sheets.length,1);assert.equal(row.sheets[0].data[0].row,3);assert.equal(row.sheets[0].data[0].cells[0],'GPU');assert.equal(row.sheets[0].next_row,null);
+  const text='А'.repeat(1000)+'🙂'+'Б'.repeat(1005);fs.writeFileSync(path.join(directory,'Long.md'),text);
+  const part=await call('document_read',{path:'Long.md',max_characters:1001});assert.equal(part.text,'А'.repeat(1000));assert.equal(part.text_range.next_character,1000);
+  const rest=await call('document_read',{path:'Long.md',start_character:part.text_range.next_character});assert.equal(part.text+rest.text,text);assert.equal(rest.text_range.next_character,null);
+  await call('pdf_create',{path:'Отчёт.pdf',title:'Проверка PDF',paragraphs:['Русский текст: Струве.','Локальные модели, память и видеокарты.']});
+  const pdf=await call('document_read',{path:'Отчёт.pdf'});assert.match(pdf.text,/Проверка PDF/);assert.match(pdf.text,/Струве/);
+  await call('pdf_create',{path:'Страницы.pdf',paragraphs:Array.from({length:100},(_,i)=>'Строка '+(i+1)+' для проверки чтения по страницам.')});
+  const page=await call('document_read',{path:'Страницы.pdf',start_page:2,max_pages:1});assert.equal(page.pages.length,1);assert.equal(page.pages[0].page,2);assert.equal(page.next_page,3);assert(!page.text.includes('[Page 1]'));
+  const overwritten=await client.callTool({name:'pdf_create',arguments:{path:'Отчёт.pdf',paragraphs:['overwrite']}});assert.equal(overwritten.isError,true);
+  const escaped=await client.callTool({name:'document_read',arguments:{path:'../outside.txt'}});assert.equal(escaped.isError,true);
+ }finally{await client.close()}
+});
+test('Document path scope excludes parent paths and private folders',()=>{for(const file of ['../x.txt','.codex/config.toml','.env'])assert.throws(()=>projectPath(file,{root:directory}),/project|credentials/)});
+test('XLSX extraction reports hidden sheets and cached formulas',async()=>{const {default:ExcelJS}=await import('exceljs');const book=new ExcelJS.Workbook(),sheet=book.addWorksheet('Hidden',{state:'hidden'});sheet.getCell('A1').value={formula:'1+2',result:3};const file=path.join(directory,'hidden.xlsx');await book.xlsx.writeFile(file);const value=await readDocument(file);assert.equal(value.sheets[0].state,'hidden');assert.equal(value.sheets[0].data[0].cells[0].result,3);assert.match(value.warning,/does not recalculate/)});
+test('Attachments preserve UTF-8 code and enforce context size and vision flag',async()=>{const file=path.join(directory,'source.py');fs.writeFileSync(file,'# Пример\nprint("Струве")');const task={model:{protocol:'ollama',context_tokens:2048,max_output_tokens:128},messages:[{role:'user',content:'Read this'}],attachments:[{kind:'text',name:'source.py',path:file}]};const messages=await prepareMessages(task);assert.match(messages[0].content,/print\("Струве"\)/);await assert.rejects(prepareMessages({...task,messages:[{role:'user',content:'x'.repeat(10000)}]}),/context estimate/);await assert.rejects(prepareMessages({...task,attachments:[{kind:'image',path:file}]}),/not configured/)});
+test('Video attachment samples four actual frames and packages vision messages',async()=>{const {default:ffmpeg}=await import('ffmpeg-static');const file=path.join(directory,'clip.mp4');const made=spawnSync(ffmpeg,['-hide_banner','-loglevel','error','-f','lavfi','-i','testsrc=size=320x180:rate=5','-t','2','-pix_fmt','yuv420p',file],{windowsHide:true});assert.equal(made.status,0,String(made.stderr));const video=await videoFrames(file);assert.equal(video.frames.length,4);assert(video.frames.every(f=>f.base64.length>1000));const decoded=spawnSync(ffmpeg,['-hide_banner','-i','pipe:0','-frames:v','1','-f','null','-'],{input:Buffer.from(video.frames[0].base64,'base64'),windowsHide:true});assert.equal(decoded.status,0);assert.match(String(decoded.stderr),/320x180/);assert.doesNotMatch(String(decoded.stderr),/1024x576/);const messages=await prepareMessages({model:{protocol:'openai',vision:true,context_tokens:2048,max_output_tokens:128},messages:[{role:'user',content:'Describe'}],attachments:[{kind:'video',name:'clip.mp4',path:file}]});assert.equal(messages[0].content.filter(c=>c.type==='image_url').length,4);assert.match(messages[0].content[0].text,/Audio is not included/)});
