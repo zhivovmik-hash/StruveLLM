@@ -8,7 +8,7 @@ Each project has its own chats, shared memory and tools. You can also control th
 
 ## Try the alpha
 
-Download the Windows x64 installer from the [alpha release](https://github.com/michailzhivov-spec/StruveLLM/releases/tag/v0.8.2-alpha.1). The release includes `SHA256SUMS.txt` to verify the download.
+Download the Windows x64 installer from the [alpha release](https://github.com/zhivovmik-hash/StruveLLM/releases/tag/v0.8.2-alpha.1). The release includes `SHA256SUMS.txt` to verify the download.
 
 Choose **English** or **Русский** in the first setup dialog. This selects the language of both the installer and the app on first launch. Reinstalling preserves the language saved in the app.
 
@@ -24,6 +24,6 @@ From the installation directory, run `bin\struve-llm.cmd --json doctor` or `bin\
 
 We welcome users and developers who want to shape Struve LLM. You can participate in English or Russian.
 
-- **Have an idea?** Tell us what you were trying to do and how you would like it to work in the app. [Suggest a feature](https://github.com/michailzhivov-spec/StruveLLM/issues/new?template=feature.yml)
-- **Tried it on your PC?** We are especially interested in first launch and how jobs behave when memory runs low. Include your Windows version, hardware and steps if something goes wrong. [Report a bug](https://github.com/michailzhivov-spec/StruveLLM/issues/new?template=bug.yml)
-- **Want to contribute a change?** Pick an issue or propose your own. Fork the repository, work on a branch and open a pull request against `main`. Code, translations, documentation and example workflows are all welcome. [Open issues](https://github.com/michailzhivov-spec/StruveLLM/issues) · [Build instructions](docs/BUILD.md)
+- **Have an idea?** Tell us what you were trying to do and how you would like it to work in the app. [Suggest a feature](https://github.com/zhivovmik-hash/StruveLLM/issues/new?template=feature.yml)
+- **Tried it on your PC?** We are especially interested in first launch and how jobs behave when memory runs low. Include your Windows version, hardware and steps if something goes wrong. [Report a bug](https://github.com/zhivovmik-hash/StruveLLM/issues/new?template=bug.yml)
+- **Want to contribute a change?** Pick an issue or propose your own. Fork the repository, work on a branch and open a pull request against `main`. Code, translations, documentation and example workflows are all welcome. [Open issues](https://github.com/zhivovmik-hash/StruveLLM/issues) · [Build instructions](docs/BUILD.md)
